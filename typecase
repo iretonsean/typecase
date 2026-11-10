@@ -1,0 +1,42 @@
+#!/bin/bash
+# Typecase launcher: starts the local server if needed, opens the app window, stops the server when the window closes.
+set -u
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+DIR="$(dirname "$SELF")"
+[ -f "$DIR/typecase.py" ] || DIR="${TYPECASE_HOME:-$HOME/.local/share/typecase/app}"
+RUN="${XDG_RUNTIME_DIR:-$HOME/.cache}"
+PIDFILE="$RUN/typecase.pid"
+PORTFILE="$RUN/typecase.port"
+STARTED=0
+
+alive() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+VERFILE="$RUN/typecase.version"
+VER=$(cat "$DIR/typecase.py" "$DIR"/static/*.js | sha1sum | cut -c1-12)
+# A server started from older code serves the wrong files: stop it (our own PID) and start a new one.
+if alive && [ "$(cat "$VERFILE" 2>/dev/null)" != "$VER" ]; then
+  kill "$(cat "$PIDFILE")" 2>/dev/null; rm -f "$PIDFILE" "$PORTFILE"; sleep 0.3
+fi
+
+if ! alive; then
+  PORT=$(/usr/bin/python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
+  /usr/bin/python3 "$DIR/typecase.py" "$PORT" >/dev/null 2>&1 &
+  MYPID=$!; echo $MYPID > "$PIDFILE"; echo "$PORT" > "$PORTFILE"; echo "$VER" > "$VERFILE"; STARTED=1
+  for _ in $(seq 50); do
+    curl -s -o /dev/null "http://127.0.0.1:$PORT/api/state" && break
+    sleep 0.2
+  done
+fi
+PORT=$(cat "$PORTFILE")
+if [ "$STARTED" = 1 ]; then
+  # Stop only the server this launcher started; a newer launcher may have replaced it.
+  trap 'kill "$MYPID" 2>/dev/null; [ "$(cat "$PIDFILE" 2>/dev/null)" = "$MYPID" ] && rm -f "$PIDFILE" "$PORTFILE" "$VERFILE"' EXIT
+  PROFILE="$HOME/.local/share/typecase/chromium"
+  chromium --app="http://127.0.0.1:$PORT" --class=Typecase --user-data-dir="$PROFILE" "$@"
+  # If a Typecase window was already open, chromium hands the new window to it and returns at once.
+  # Keep the server up until that browser process (named in its profile lock) exits.
+  while LOCKPID=$(readlink "$PROFILE/SingletonLock" 2>/dev/null | sed 's/.*-//') && [ -n "$LOCKPID" ] && kill -0 "$LOCKPID" 2>/dev/null; do
+    sleep 2
+  done
+else
+  exec chromium --app="http://127.0.0.1:$PORT" --class=Typecase --user-data-dir="$HOME/.local/share/typecase/chromium" "$@"
+fi
