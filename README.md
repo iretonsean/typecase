@@ -77,3 +77,7 @@ Typecase needs only `python3`, `chromium` and `fontconfig`. It installs nothing 
 
 - `python3 -m unittest -v` runs the unit tests.
 - `tests/e2e-drive.mjs` drives the UI through the Chrome DevTools Protocol. It needs a headless Chromium with `--remote-debugging-port=9333` and a test server on port 47312 (`python3 typecase.py 47312`, with `TYPECASE_STATE` and `TYPECASE_FONT_DIR` pointed at a test folder).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE). HarfBuzz (in `static/vendor/harfbuzz/`) keeps its own MIT licence.
